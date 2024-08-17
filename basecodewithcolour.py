@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import mediapipe as mp
 from collections import deque
-from tkinter import Tk, colorchooser, filedialog
+from tkinter import Tk, colorchooser, filedialog, simpledialog
 
 # Initialize MediaPipe Hands and Drawing utils
 mp_hands = mp.solutions.hands
@@ -25,11 +25,13 @@ cap = cv2.VideoCapture(0)
 color_picker_img = cv2.imread('color_picker_icon.png', cv2.IMREAD_UNCHANGED)
 clear_img = cv2.imread('clear_icon.png', cv2.IMREAD_UNCHANGED)
 save_img = cv2.imread('save_icon.png', cv2.IMREAD_UNCHANGED)
+brush_thickness_img = cv2.imread('brush_thickness_icon.png', cv2.IMREAD_UNCHANGED)
 
 # Resize images to fit the button area
 color_picker_img = cv2.resize(color_picker_img, (60, 60))
 clear_img = cv2.resize(clear_img, (60, 60))
 save_img = cv2.resize(save_img, (60, 60))
+brush_thickness_img = cv2.resize(brush_thickness_img, (60, 60))
 
 # Function to detect if a finger is up
 def is_finger_up(hand_landmarks, finger_tip_idx, finger_pip_idx):
@@ -49,6 +51,16 @@ def overlay_image(frame, img, pos):
     else:  # If the image does not have an alpha channel
         frame[y1:y2, x1:x2] = img
 
+# Function to display the brush thickness menu
+def show_brush_thickness_menu():
+    root = Tk()
+    root.withdraw()  # Hide the root window
+    brush_thickness = simpledialog.askinteger("Brush Thickness", "Enter thickness (e.g., 1-10):", minvalue=1, maxvalue=10)
+    root.destroy()
+    return brush_thickness if brush_thickness else 2
+
+# Brush thickness
+brush_thickness = 2  # Default thickness
 
 # Initialize MediaPipe Hands with higher detection confidence
 with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_confidence=0.8) as hands:
@@ -70,7 +82,7 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                 # Draw landmarks on the hand
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                 
-                # Get the coordinates of the index fingertip
+                # Get the coordinates of the index and middle fingertips
                 index_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
                 middle_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
                 index_cx, index_cy = int(index_finger_tip.x * w), int(index_finger_tip.y * h)
@@ -82,36 +94,38 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                 index_finger_up = is_finger_up(hand_landmarks, mp_hands.HandLandmark.INDEX_FINGER_TIP, mp_hands.HandLandmark.INDEX_FINGER_PIP)
                 middle_finger_up = is_finger_up(hand_landmarks, mp_hands.HandLandmark.MIDDLE_FINGER_TIP, mp_hands.HandLandmark.MIDDLE_FINGER_PIP)
 
-                # Update drawing state based on the index and middle fingers
+                # Update drawing state based on the fingers
                 if index_finger_up and middle_finger_up:
-                    if not drawing_paused:  # Transitioning to paused state
+                    if not drawing_paused:  # Pause drawing
+                        drawing_paused = True
                         points.append(deque(maxlen=1024))  # Start a new line segment
                         index += 1
-                    drawing_paused = True
                 elif index_finger_up and not middle_finger_up:
-                    if drawing_paused:  # Transitioning to drawing state
+                    if drawing_paused:  # Resume drawing
+                        drawing_paused = False
                         points.append(deque(maxlen=1024))  # Start a new line segment
                         index += 1
-                    drawing_paused = False
 
                 if not drawing_paused:
                     # Check for button presses
                     if index_cy <= 65:
-                        if 40 <= index_cx <= 140:  # Color Picker Button
+                        if 40 <= index_cx <= 100:  # Color Picker Button
                             root = Tk()
                             root.withdraw()  # Hide the root window
                             color = colorchooser.askcolor()[0]
                             if color:
                                 selected_color = tuple(map(int, color[::-1]))  # Convert to BGR format
                             root.destroy()
-                        elif 160 <= index_cx <= 255:  # Clear Button
+                        elif 160 <= index_cx <= 220:  # Clear Button
                             paintWindow[:] = 255
                             points = [deque(maxlen=1024)]
                             index = 0
-                        elif 275 <= index_cx <= 370:  # Save Button
+                        elif 275 <= index_cx <= 335:  # Save Button
                             file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG files", "*.png")])
                             if file_path:
                                 cv2.imwrite(file_path, paintWindow)
+                        elif 385 <= index_cx <= 445:  # Brush Thickness Button
+                            brush_thickness = show_brush_thickness_menu()
                     else:
                         # Ensure points list is long enough
                         if index >= len(points):
@@ -127,13 +141,14 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
             for j in range(1, len(points[i])):
                 if points[i][j - 1] is None or points[i][j] is None:
                     continue
-                cv2.line(frame, points[i][j - 1], points[i][j], selected_color, 2)
-                cv2.line(paintWindow, points[i][j - 1], points[i][j], selected_color, 2)
+                cv2.line(frame, points[i][j - 1], points[i][j], selected_color, brush_thickness)
+                cv2.line(paintWindow, points[i][j - 1], points[i][j], selected_color, brush_thickness)
 
         # Overlay the custom button images
         overlay_image(frame, color_picker_img, (40, 5))
         overlay_image(frame, clear_img, (160, 5))
         overlay_image(frame, save_img, (275, 5))
+        overlay_image(frame, brush_thickness_img, (385, 5))
 
         # Show all the windows
         cv2.imshow("Tracking", frame)

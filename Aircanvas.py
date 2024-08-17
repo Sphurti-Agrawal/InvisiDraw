@@ -2,7 +2,7 @@ import numpy as np
 import cv2
 import mediapipe as mp
 from collections import deque
-from tkinter import Tk, colorchooser, filedialog
+from tkinter import Tk, colorchooser, filedialog, simpledialog
 
 # Initialize MediaPipe Hands and Drawing utils
 mp_hands = mp.solutions.hands
@@ -13,9 +13,6 @@ points = [deque(maxlen=1024)]
 index = 0
 selected_color = (255, 0, 0)  # Default color for drawing
 drawing_paused = False
-brush_thickness = 2  # Default brush thickness
-thickness_levels = [2, 4, 6, 8]  # Available brush thickness levels
-show_thickness_panel = False  # Whether to show the thickness panel
 
 # Create the paint window
 paintWindow = np.ones((471, 636, 3), dtype=np.uint8) * 255
@@ -54,6 +51,17 @@ def overlay_image(frame, img, pos):
     else:  # If the image does not have an alpha channel
         frame[y1:y2, x1:x2] = img
 
+# Function to display the brush thickness menu
+def show_brush_thickness_menu():
+    root = Tk()
+    root.withdraw()  # Hide the root window
+    brush_thickness = simpledialog.askinteger("Brush Thickness", "Enter thickness (e.g., 1-10):", minvalue=1, maxvalue=10)
+    root.destroy()
+    return brush_thickness if brush_thickness else 2
+
+# Brush thickness
+brush_thickness = 2  # Default thickness
+
 # Initialize MediaPipe Hands with higher detection confidence
 with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_confidence=0.8) as hands:
     while cap.isOpened():
@@ -74,7 +82,7 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                 # Draw landmarks on the hand
                 mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                 
-                # Get the coordinates of the index fingertip
+                # Get the coordinates of the index and middle fingertips
                 index_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
                 middle_finger_tip = hand_landmarks.landmark[mp_hands.HandLandmark.MIDDLE_FINGER_TIP]
                 index_cx, index_cy = int(index_finger_tip.x * w), int(index_finger_tip.y * h)
@@ -86,17 +94,17 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                 index_finger_up = is_finger_up(hand_landmarks, mp_hands.HandLandmark.INDEX_FINGER_TIP, mp_hands.HandLandmark.INDEX_FINGER_PIP)
                 middle_finger_up = is_finger_up(hand_landmarks, mp_hands.HandLandmark.MIDDLE_FINGER_TIP, mp_hands.HandLandmark.MIDDLE_FINGER_PIP)
 
-                # Update drawing state based on the index and middle fingers
+                # Update drawing state based on the fingers
                 if index_finger_up and middle_finger_up:
-                    if not drawing_paused:  # Transitioning to paused state
+                    if not drawing_paused:  # Pause drawing
+                        drawing_paused = True
                         points.append(deque(maxlen=1024))  # Start a new line segment
                         index += 1
-                    drawing_paused = True
                 elif index_finger_up and not middle_finger_up:
-                    if drawing_paused:  # Transitioning to drawing state
+                    if drawing_paused:  # Resume drawing
+                        drawing_paused = False
                         points.append(deque(maxlen=1024))  # Start a new line segment
                         index += 1
-                    drawing_paused = False
 
                 if not drawing_paused:
                     # Check for button presses
@@ -116,19 +124,13 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                             file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("PNG files", "*.png")])
                             if file_path:
                                 cv2.imwrite(file_path, paintWindow)
-                        elif 390 <= index_cx <= 450:  # Brush Thickness Button
-                            show_thickness_panel = not show_thickness_panel
-                    elif show_thickness_panel:
-                        for i, thickness in enumerate(thickness_levels):
-                            if 390 + i * 30 <= index_cx <= 420 + i * 30 and 65 <= index_cy <= 95:
-                                brush_thickness = thickness
-                                show_thickness_panel = False
-                                break
-                else:
-                    # Ensure points list is long enough
-                    if index >= len(points):
-                        points.append(deque(maxlen=1024))
-                    points[index].appendleft((index_cx, index_cy))
+                        elif 385 <= index_cx <= 445:  # Brush Thickness Button
+                            brush_thickness = show_brush_thickness_menu()
+                    else:
+                        # Ensure points list is long enough
+                        if index >= len(points):
+                            points.append(deque(maxlen=1024))
+                        points[index].appendleft((index_cx, index_cy))
         
         else:
             points.append(deque(maxlen=1024))
@@ -146,13 +148,7 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
         overlay_image(frame, color_picker_img, (40, 5))
         overlay_image(frame, clear_img, (160, 5))
         overlay_image(frame, save_img, (275, 5))
-        overlay_image(frame, brush_thickness_img, (390, 5))
-
-        # Draw the brush thickness panel if needed
-        if show_thickness_panel:
-            for i, thickness in enumerate(thickness_levels):
-                cv2.rectangle(frame, (390 + i * 30, 65), (420 + i * 30, 95), (200, 200, 200), -1)
-                cv2.putText(frame, str(thickness), (400 + i * 30, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2, cv2.LINE_AA)
+        overlay_image(frame, brush_thickness_img, (385, 5))
 
         # Show all the windows
         cv2.imshow("Tracking", frame)
@@ -164,4 +160,4 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
 
 # Release the camera and all resources
 cap.release()
-cv2.destroyAll
+cv2.destroyAllWindows()
