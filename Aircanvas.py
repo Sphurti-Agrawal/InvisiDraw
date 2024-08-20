@@ -12,3 +12,7 @@ mp_drawing=mp.solutions.drawing_utils
 canvas=[deque(maxlen=1024)]
 index=0
 selected_colour=(255,0,0) #Default colour for drawing : Blue
+drawing_paused= False
+
+#Create teh paint window
+paintWindow= np.ones((471,636, 3), dtype=np.uint8)*255
