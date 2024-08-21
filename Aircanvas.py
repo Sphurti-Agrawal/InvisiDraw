@@ -12,7 +12,12 @@ mp_drawing=mp.solutions.drawing_utils
 canvas=[deque(maxlen=1024)]
 index=0
 selected_colour=(255,0,0) #Default colour for drawing : Blue
-drawing_paused= False
+drawing_paused= Fals
 
 #Create teh paint window
 paintWindow= np.ones((471,636, 3), dtype=np.uint8)*255
+cv2.namedWindow('Paint', cv2.WINDOW_AUTOSIZE)
+cv2.namedWindow('Paint', cv2.WINDOW_AUTOSIZE)
+
+# Initialize video capture
+cap = cv2.VideoCapture(0)
