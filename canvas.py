@@ -13,6 +13,8 @@ points = [deque(maxlen=1024)]
 index = 0
 selected_color = (255, 0, 0)  # Default color for drawing
 drawing_paused = False
+current_shape = None
+start_pos = None
 
 # Create the paint window
 paintWindow = np.ones((471, 636, 3), dtype=np.uint8) * 255
@@ -22,36 +24,36 @@ cv2.namedWindow('Paint', cv2.WINDOW_AUTOSIZE)
 cap = cv2.VideoCapture(0)
 
 # Load button images
-def load_and_resize_image(image_path, size=(60, 60)):
-    img = cv2.imread(image_path, cv2.IMREAD_UNCHANGED)
-    if img is not None:
-        img = cv2.resize(img, size)
-    else:
-        print(f"Error loading {image_path}")
-    return img
+color_picker_img = cv2.imread('color_picker_icon.png', cv2.IMREAD_UNCHANGED)
+clear_img = cv2.imread('clear_icon.png', cv2.IMREAD_UNCHANGED)
+save_img = cv2.imread('save_icon.png', cv2.IMREAD_UNCHANGED)
+brush_thickness_img = cv2.imread('brush_thickness_icon.png', cv2.IMREAD_UNCHANGED)
+circle_img = cv2.imread('circle_icon.png', cv2.IMREAD_UNCHANGED)
+rectangle_img = cv2.imread('rectangle_icon.png', cv2.IMREAD_UNCHANGED)
+line_img = cv2.imread('line_icon.png', cv2.IMREAD_UNCHANGED)
 
-color_picker_img = load_and_resize_image('color_picker_icon.png')
-clear_img = load_and_resize_image('clear_icon.png')
-save_img = load_and_resize_image('save_icon.png')
-brush_thickness_img = load_and_resize_image('brush_thickness_icon.png')
-circle_img = load_and_resize_image('circle_icon.png')
-rectangle_img = load_and_resize_image('rectangle_icon.png')
-triangle_img = load_and_resize_image('triangle_icon.png')
+# Resize images to fit the button area
+color_picker_img = cv2.resize(color_picker_img, (60, 60))
+clear_img = cv2.resize(clear_img, (60, 60))
+save_img = cv2.resize(save_img, (60, 60))
+brush_thickness_img = cv2.resize(brush_thickness_img, (60, 60))
+circle_img = cv2.resize(circle_img, (60, 60))
+rectangle_img = cv2.resize(rectangle_img, (60, 60))
+line_img = cv2.resize(line_img, (60, 60))
 
 # Function to detect if a finger is up
 def is_finger_up(hand_landmarks, finger_tip_idx, finger_pip_idx):
     return hand_landmarks.landmark[finger_tip_idx].y < hand_landmarks.landmark[finger_pip_idx].y
 
 # Function to overlay images with transparency
-def overlay_image(frame, img, pos):
-    img_h, img_w = img.shape[:2]
-    y1, y2 = pos[1], pos[1] + img_h
-    x1, x2 = pos[0], pos[0] + img_w
 
-    # Ensure the overlay area does not exceed the frame dimensions
+def overlay_image(frame, img, pos):
+    y1, y2 = pos[1], pos[1] + img.shape[0]
+    x1, x2 = pos[0], pos[0] + img.shape[1]
+
+    # Ensure the overlay area fits within the frame dimensions
     if y2 > frame.shape[0] or x2 > frame.shape[1]:
-        print("Overlay image exceeds frame dimensions")
-        return
+        return  # Skip overlay if it doesn't fit
 
     if img.shape[2] == 4:  # If the image has an alpha channel
         alpha_s = img[:, :, 3] / 255.0
@@ -62,6 +64,7 @@ def overlay_image(frame, img, pos):
     else:  # If the image does not have an alpha channel
         frame[y1:y2, x1:x2] = img
 
+
 # Function to display the brush thickness menu
 def show_brush_thickness_menu():
     root = Tk()
@@ -70,21 +73,8 @@ def show_brush_thickness_menu():
     root.destroy()
     return brush_thickness if brush_thickness else 2
 
-# Function to draw predefined shapes
-def draw_shape(paintWindow, shape, position, size=50, color=(0, 0, 0), thickness=2):
-    cx, cy = position
-    if shape == 'circle':
-        cv2.circle(paintWindow, (cx, cy), size // 2, color, thickness)
-    elif shape == 'rectangle':
-        cv2.rectangle(paintWindow, (cx - size // 2, cy - size // 2), (cx + size // 2, cy + size // 2), color, thickness)
-    elif shape == 'triangle':
-        pts = np.array([[cx, cy - size // 2], [cx - size // 2, cy + size // 2], [cx + size // 2, cy + size // 2]], np.int32)
-        pts = pts.reshape((-1, 1, 2))
-        cv2.polylines(paintWindow, [pts], isClosed=True, color=color, thickness=thickness)
-
 # Brush thickness
 brush_thickness = 2  # Default thickness
-selected_shape = None  # No shape selected by default
 
 # Initialize MediaPipe Hands with higher detection confidence
 with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_confidence=0.8) as hands:
@@ -151,21 +141,31 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                         elif 385 <= index_cx <= 445:  # Brush Thickness Button
                             brush_thickness = show_brush_thickness_menu()
                         elif 495 <= index_cx <= 555:  # Circle Button
-                            selected_shape = 'circle'
+                            current_shape = 'circle'
                         elif 605 <= index_cx <= 665:  # Rectangle Button
-                            selected_shape = 'rectangle'
-                        elif 715 <= index_cx <= 775:  # Triangle Button
-                            selected_shape = 'triangle'
+                            current_shape = 'rectangle'
+                        elif 715 <= index_cx <= 775:  # Line Button
+                            current_shape = 'line'
                     else:
-                        if selected_shape:
-                            draw_shape(paintWindow, selected_shape, (index_cx, index_cy), color=selected_color)
-                            selected_shape = None  # Reset after drawing shape
+                        # Set the start position for drawing shapes
+                        if start_pos is None:
+                            start_pos = (index_cx, index_cy)
                         else:
-                            # Ensure points list is long enough
-                            if index >= len(points):
-                                points.append(deque(maxlen=1024))
-                            points[index].appendleft((index_cx, index_cy))
-        
+                            if current_shape == 'circle':
+                                radius = int(np.linalg.norm(np.array(start_pos) - np.array((index_cx, index_cy))))
+                                cv2.circle(frame, start_pos, radius, selected_color, brush_thickness)
+                                cv2.circle(paintWindow, start_pos, radius, selected_color, brush_thickness)
+                            elif current_shape == 'rectangle':
+                                cv2.rectangle(frame, start_pos, (index_cx, index_cy), selected_color, brush_thickness)
+                                cv2.rectangle(paintWindow, start_pos, (index_cx, index_cy), selected_color, brush_thickness)
+                            elif current_shape == 'line':
+                                cv2.line(frame, start_pos, (index_cx, index_cy), selected_color, brush_thickness)
+                                cv2.line(paintWindow, start_pos, (index_cx, index_cy), selected_color, brush_thickness)
+                            
+                            # Reset start position after drawing the shape
+                            start_pos = None
+                            current_shape = None
+                        
         else:
             points.append(deque(maxlen=1024))
             index += 1
@@ -178,22 +178,23 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                 cv2.line(frame, points[i][j - 1], points[i][j], selected_color, brush_thickness)
                 cv2.line(paintWindow, points[i][j - 1], points[i][j], selected_color, brush_thickness)
 
-        # Overlay the custom button images
+        # Display buttons
         overlay_image(frame, color_picker_img, (40, 5))   # Color Picker Button
         overlay_image(frame, clear_img, (160, 5))         # Clear Button
         overlay_image(frame, save_img, (275, 5))          # Save Button
         overlay_image(frame, brush_thickness_img, (385, 5))  # Brush Thickness Button
         overlay_image(frame, circle_img, (495, 5))        # Circle Button
         overlay_image(frame, rectangle_img, (605, 5))     # Rectangle Button
-        overlay_image(frame, triangle_img, (715, 5))      # Triangle Button
+        overlay_image(frame, line_img, (715, 5))          # Line Button
 
-        # Display the paint window and the frame
-        cv2.imshow("Paint", paintWindow)
-        cv2.imshow("Frame", frame)
+        # Display the frame
+        cv2.imshow('Paint', paintWindow)
+        cv2.imshow('Frame', frame)
 
-        # Exit on pressing the 'Esc' key
-        if cv2.waitKey(1) & 0xFF == 27:
+        # Break loop on 'q' key press
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
+# Release resources
 cap.release()
 cv2.destroyAllWindows()
