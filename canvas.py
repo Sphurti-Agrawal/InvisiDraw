@@ -69,7 +69,7 @@ def overlay_image(frame, img, pos):
 # Function to display the brush thickness menu
 def show_brush_thickness_menu():
     root = Tk()
-    root.withdraw()  # Hide the root window
+    root.withdraw()  
     brush_thickness = simpledialog.askinteger("Brush Thickness", "Enter thickness (e.g., 1-10):", minvalue=1, maxvalue=10)
     root.destroy()
     return brush_thickness if brush_thickness else 2
@@ -172,7 +172,6 @@ with mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.8, min_tracking_
                             if index >= len(points):
                                 points.append(deque(maxlen=1024))
                             points[index].appendleft((index_cx, index_cy))
-        
         else:
             # Clear the points if no hand is detected
             points = [deque(maxlen=1024)]
